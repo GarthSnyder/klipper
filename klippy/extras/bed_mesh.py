@@ -241,9 +241,6 @@ class BedMeshCalibrate:
             'BED_MESH_TILT', self.cmd_BED_MESH_TILT,
             desc=self.cmd_BED_MESH_TILT_help)
         self.gcode.register_command(
-            'BED_MESH_MAP', self.cmd_BED_MESH_MAP,
-            desc=self.cmd_BED_MESH_MAP_help)
-        self.gcode.register_command(
             'BED_MESH_PROFILE', self.cmd_BED_MESH_PROFILE,
             desc=self.cmd_BED_MESH_PROFILE_help)
     def handle_ready(self):
@@ -492,10 +489,6 @@ class BedMeshCalibrate:
                 return
         self.gcode.respond_info(
             "Invalid syntax '%s'" % (params['#original']))
-    cmd_BED_MESH_MAP_help = "Probe the bed and serialize output"
-    def cmd_BED_MESH_MAP(self, params):
-        self.build_map = True
-        self.start_calibration(params)
     cmd_BED_MESH_CALIBRATE_help = "Perform Mesh Bed Leveling"
     def cmd_BED_MESH_CALIBRATE(self, params):
         self.build_map = False
