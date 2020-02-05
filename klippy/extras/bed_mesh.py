@@ -493,7 +493,7 @@ class BedMeshCalibrate:
     def cmd_BED_MESH_CALIBRATE(self, params):
         self.build_map = False
         self.start_calibration(params)
-    cmd_BED_MESH_TILT_help = "Perform Tilting of existing Mesh"
+    cmd_BED_MESH_TILT_help = "Tilt active mesh to match current attitude of bed"
     def cmd_BED_MESH_TILT(self, params):
         self.start_tilting(params)
     def start_calibration(self, params):
@@ -501,7 +501,7 @@ class BedMeshCalibrate:
         self.probed_z_table_backup=None
         self.probe_helper.start_probe(params)
     def start_tilting(self, params):
-        if self.bedmesh.z_mesh.mesh_z_table is None:
+        if self.bedmesh.z_mesh is None:
             self.gcode.respond_info("No mesh! Nothing to tilt!");
         else:
             self.tilt_probe_helper.start_probe(params)
