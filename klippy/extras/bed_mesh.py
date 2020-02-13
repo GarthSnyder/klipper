@@ -224,6 +224,7 @@ class BedMeshCalibrate:
         self._init_mesh_params(config, self.points)
         self.probe_helper = probe.ProbePointsHelper(
             config, self.probe_finalize, self.points)
+        self.print_generated_points(logging.info)
         self.tilt_probe_helper = probe.ProbePointsHelper(
             config, self.tilt_probe_finalize, self.tilt_points)
         self.probe_helper.minimum_points(3)
