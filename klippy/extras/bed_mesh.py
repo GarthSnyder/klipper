@@ -504,6 +504,7 @@ class BedMeshCalibrate:
         self.probed_z_table_backup=None
         self.probe_helper.start_probe(params)
     def start_tilting(self, params):
+        logging.info("In start_tilting")
         if self.bedmesh.z_mesh is None:
             self.gcode.respond_info("No mesh! Nothing to tilt!");
         else:
