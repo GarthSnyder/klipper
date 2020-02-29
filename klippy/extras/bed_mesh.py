@@ -524,13 +524,8 @@ class BedMeshCalibrate:
 
 
     def tilt_probe_finalize(self, offsets, positions):
-        x_offset = offsets[0]
-        y_offset = offsets[1]
-        z_offset = offsets[2]
-        self.gcode.respond_info \
-                ("offsets: %f %f %f" % (x_offset,y_offset,z_offset) );
-
-        params=self.bedmesh.z_mesh.probe_params
+        x_offset, y_offset, z_offset = offsets
+        self.gcode.respond_info("offsets: %f %f %f" % tuple(offsets));
 
         if self.relative_reference_index is not None:
             rri = self.relative_reference_index
@@ -539,16 +534,15 @@ class BedMeshCalibrate:
         if self.probed_z_table_backup is None:
             self.probed_z_table_backup = copy.deepcopy(self.probed_z_table)
 
-        t_probed_z_table=copy.deepcopy(self.probed_z_table_backup)
+        t_probed_z_table = copy.deepcopy(self.probed_z_table_backup)
         self.bedmesh.z_mesh.build_mesh(t_probed_z_table)
-        pts=[]
+        pts = []
         # shift measured positions
         for pos in positions:
             # offset according to the mesh
-            calc_Zval=self.bedmesh.z_mesh.\
-                    calc_z(pos[0]+x_offset,pos[1]+y_offset)+z_offset
-            ZvalCorrectioncorr=pos[2] -calc_Zval;
-            pts.append([pos[0],pos[1],ZvalCorrectioncorr] )
+            z_in_mesh = self.bedmesh.z_mesh.calc_z(*pos[0:2]) + z_offset
+            z_delta = pos[2] - z_in_mesh;
+            pts.append([pos[0],pos[1],z_delta])
 
         # cross product of vectors defined by 3 probed points
         cx=pts[1][2]*(pts[0][1] - pts[2][1]) + \
@@ -566,6 +560,8 @@ class BedMeshCalibrate:
 
         # now for any (x,y) z defines as (d-cx*X-cy*Y)/cz
         z_correction=[-cx/cz,-cy/cz,d/cz]
+
+        params = self.bedmesh.z_mesh.mesh_params
 
         x_cnt = params['x_count']
         y_cnt = params['y_count']
