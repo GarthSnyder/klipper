@@ -533,9 +533,8 @@ class BedMeshCalibrate:
         params=self.bedmesh.z_mesh.probe_params
 
         if self.relative_reference_index is not None:
-            # zero out probe z offset and
-            # set offset relative to reference index
-            z_offset = positions[self.relative_reference_index][2]
+            rri = self.relative_reference_index
+            z_offset = self.bedmesh.z_mesh.calc_z(*self.points[rri][0:2])
 
         if self.probed_z_table_backup is None:
             self.probed_z_table_backup = copy.deepcopy(self.probed_z_table)
