@@ -427,6 +427,11 @@ class BedMeshCalibrate:
                 "Unable to save to profile [%s], the bed has not been probed"
                 % (prof_name))
             return
+        if not self.probed_matrix_backup is None:
+            self.gcode.respond_info(
+                "Unable to save to profile [%s], the bed mesh has been tilted"
+                % (prof_name))
+            return
         configfile = self.printer.lookup_object('configfile')
         cfg_name = self.name + " " + prof_name
         # set params
@@ -505,7 +510,6 @@ class BedMeshCalibrate:
         self.probed_matrix_backup=None
         self.probe_helper.start_probe(params)
     def start_tilting(self, params):
-        logging.info("In start_tilting")
         if self.bedmesh.z_mesh is None:
             self.gcode.respond_info("No mesh! Nothing to tilt!");
         else:
@@ -522,6 +526,12 @@ class BedMeshCalibrate:
         else:
             print_func("bed_mesh: bed has not been probed")
 
+    # Look up z position according to the active mesh and 
+    # compare with probed height
+    def _calculate_delta_z(self, pos, z_offset):
+        z_in_mesh = self.bedmesh.z_mesh.calc_z(*pos[0:2]) + z_offset
+        delta_z = pos[2] - z_in_mesh;
+        return [pos[0], pos[1], delta_z]
 
     def tilt_probe_finalize(self, offsets, positions):
         x_offset, y_offset, z_offset = offsets
@@ -536,13 +546,7 @@ class BedMeshCalibrate:
 
         t_probed_matrix = copy.deepcopy(self.probed_matrix_backup)
         self.bedmesh.z_mesh.build_mesh(t_probed_matrix)
-        pts = []
-        # shift measured positions
-        for pos in positions:
-            # offset according to the mesh
-            z_in_mesh = self.bedmesh.z_mesh.calc_z(*pos[0:2]) + z_offset
-            z_delta = pos[2] - z_in_mesh;
-            pts.append([pos[0],pos[1],z_delta])
+        pts = [self._calculate_delta_z(pos, z_offset) for pos in positions]
 
         # cross product of vectors defined by 3 probed points
         cx=pts[1][2]*(pts[0][1] - pts[2][1]) + \
@@ -587,7 +591,6 @@ class BedMeshCalibrate:
         self.probed_matrix = t_probed_matrix
 
         self.gcode.respond_info("Mesh Bed Tilting Complete")
-        self.save_profile("default")
 
 
     def probe_finalize(self, offsets, positions):
