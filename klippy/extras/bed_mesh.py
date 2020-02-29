@@ -216,7 +216,7 @@ class BedMeshCalibrate:
             'relative_reference_index', None)
         self.bedmesh = bedmesh
         self.probed_matrix = None
-        self.probed_z_table_backup = None
+        self.probed_matrix_backup = None
         self.build_map = False
         self.tilt_points = []
         self.mesh_params = collections.OrderedDict()
@@ -455,7 +455,7 @@ class BedMeshCalibrate:
             raise self.gcode.error(
                 "bed_mesh: Unknown profile [%s]" % prof_name)
         self.probed_matrix = profile['points']
-        self.probed_z_table_backup = None
+        self.probed_matrix_backup = None
         zmesh = ZMesh(profile['mesh_params'])
         try:
             zmesh.build_mesh(self.probed_matrix)
@@ -502,7 +502,7 @@ class BedMeshCalibrate:
         self.start_tilting(params)
     def start_calibration(self, params):
         self.bedmesh.set_mesh(None)
-        self.probed_z_table_backup=None
+        self.probed_matrix_backup=None
         self.probe_helper.start_probe(params)
     def start_tilting(self, params):
         logging.info("In start_tilting")
@@ -531,11 +531,11 @@ class BedMeshCalibrate:
             rri = self.relative_reference_index
             z_offset = self.bedmesh.z_mesh.calc_z(*self.points[rri][0:2])
 
-        if self.probed_z_table_backup is None:
-            self.probed_z_table_backup = copy.deepcopy(self.probed_z_table)
+        if self.probed_matrix_backup is None:
+            self.probed_matrix_backup = copy.deepcopy(self.probed_matrix)
 
-        t_probed_z_table = copy.deepcopy(self.probed_z_table_backup)
-        self.bedmesh.z_mesh.build_mesh(t_probed_z_table)
+        t_probed_matrix = copy.deepcopy(self.probed_matrix_backup)
+        self.bedmesh.z_mesh.build_mesh(t_probed_matrix)
         pts = []
         # shift measured positions
         for pos in positions:
@@ -574,17 +574,17 @@ class BedMeshCalibrate:
                 xx=(min_x+i*x_dist)
                 yy=(min_y+j*y_dist)
                 Zcorr=z_correction[0]*xx+z_correction[1]*yy+z_correction[2]
-                t_probed_z_table[j][i]+=Zcorr
+                t_probed_matrix[j][i]+=Zcorr
 
         mesh = ZMesh(params)
         try:
-            mesh.build_mesh(t_probed_z_table)
+            mesh.build_mesh(t_probed_matrix)
         except BedMeshError as e:
-            self.probed_z_table = copy.deepcopy(self.probed_z_table_backup)
+            self.probed_matrix = copy.deepcopy(self.probed_matrix_backup)
             raise self.gcode.error(e.message)
         self.bedmesh.set_mesh(mesh)
 
-        self.probed_z_table=t_probed_z_table
+        self.probed_matrix = t_probed_matrix
 
         self.gcode.respond_info("Mesh Bed Tilting Complete")
         self.save_profile("default")
