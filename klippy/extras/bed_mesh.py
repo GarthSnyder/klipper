@@ -232,6 +232,7 @@ class BedMeshCalibrate:
         self.probe_helper.minimum_points(3)
         self.tilt_probe_helper.minimum_points(3)
         self.probe_helper.use_xy_offsets(True)
+        self.tilt_probe_helper.use_xy_offsets(True)
         # setup persistent storage
         self.profiles = {}
         self.incompatible_profiles = []
