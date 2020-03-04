@@ -429,14 +429,15 @@ class BedMeshCalibrate:
             return
         if not self.probed_matrix_backup is None:
             self.gcode.respond_info(
-                "Unable to save to profile [%s], the bed mesh has been tilted"
-                % (prof_name))
-            return
+                "NOTE: bed mesh has been tilted, saving the original, untilted mesh data...")
+            matrix = self.probed_matrix_backup
+        else:
+            matrix = self.probed_matrix
         configfile = self.printer.lookup_object('configfile')
         cfg_name = self.name + " " + prof_name
         # set params
         z_values = ""
-        for line in self.probed_matrix:
+        for line in matrix:
             z_values += "\n  "
             for p in line:
                 z_values += "%.6f, " % p
@@ -447,7 +448,7 @@ class BedMeshCalibrate:
             configfile.set(cfg_name, key, value)
         # save copy in local storage
         self.profiles[prof_name] = profile = {}
-        profile['points'] = list(self.probed_matrix)
+        profile['points'] = list(matrix)
         profile['mesh_params'] = collections.OrderedDict(self.mesh_params)
         self.gcode.respond_info(
             "Bed Mesh state has been saved to profile [%s]\n"
