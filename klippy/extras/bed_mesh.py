@@ -17,6 +17,10 @@ PROFILE_OPTIONS = {
     'x_count': int, 'y_count': int, 'mesh_x_pps': int, 'mesh_y_pps': int,
     'algo': str, 'tension': float
 }
+PROFILE_ORDER = [
+    'x_count', 'y_count', 'min_x', 'max_x', 'min_y', 'max_y',
+    'mesh_x_pps', 'mesh_y_pps', 'algo', 'tension'
+]
 
 class BedMeshError(Exception):
     pass
@@ -445,7 +449,9 @@ class BedMeshCalibrate:
         configfile.set(cfg_name, 'version', PROFILE_VERSION)
         configfile.set(cfg_name, 'points', z_values)
         params = self.bedmesh.z_mesh.mesh_params
-        for key, value in params.iteritems():
+        sorted_params = sorted(params.iteritems(), key=lambda pair:
+            PROFILE_ORDER.index(pair[0]) if pair[0] in PROFILE_ORDER else 999)
+        for key, value in sorted_params:
             configfile.set(cfg_name, key, value)
         # save copy in local storage
         self.profiles[prof_name] = profile = {}
