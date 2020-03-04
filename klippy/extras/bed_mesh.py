@@ -18,8 +18,8 @@ PROFILE_OPTIONS = {
     'algo': str, 'tension': float
 }
 PROFILE_ORDER = [
-    'x_count', 'y_count', 'min_x', 'max_x', 'min_y', 'max_y',
-    'mesh_x_pps', 'mesh_y_pps', 'algo', 'tension'
+    'x_count', 'y_count', 'mesh_x_pps', 'mesh_y_pps', 'algo', 'tension',
+    'min_x', 'max_x', 'min_y', 'max_y'
 ]
 
 class BedMeshError(Exception):
