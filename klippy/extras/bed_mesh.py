@@ -427,9 +427,9 @@ class BedMeshCalibrate:
                 "Unable to save to profile [%s], the bed has not been probed"
                 % (prof_name))
             return
-        if not self.probed_matrix_backup is None:
+        if self.probed_matrix_backup is not None:
             self.gcode.respond_info(
-                "NOTE: bed mesh has been tilted, saving the original, untilted mesh data...")
+                "NOTE: mesh has been tilted, saving untilted mesh data...")
             matrix = self.probed_matrix_backup
         else:
             matrix = self.probed_matrix
@@ -444,12 +444,13 @@ class BedMeshCalibrate:
             z_values = z_values[:-2]
         configfile.set(cfg_name, 'version', PROFILE_VERSION)
         configfile.set(cfg_name, 'points', z_values)
-        for key, value in self.mesh_params.iteritems():
+        params = self.bedmesh.z_mesh.mesh_params
+        for key, value in params.iteritems():
             configfile.set(cfg_name, key, value)
         # save copy in local storage
         self.profiles[prof_name] = profile = {}
         profile['points'] = list(matrix)
-        profile['mesh_params'] = collections.OrderedDict(self.mesh_params)
+        profile['mesh_params'] = collections.OrderedDict(params)
         self.gcode.respond_info(
             "Bed Mesh state has been saved to profile [%s]\n"
             "for the current session.  The SAVE_CONFIG command will\n"
