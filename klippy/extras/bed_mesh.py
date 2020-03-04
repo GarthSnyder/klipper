@@ -265,23 +265,23 @@ class BedMeshCalibrate:
             self.radius = math.floor(self.radius * 10) / 10
             min_x = min_y = -self.radius
             max_x = max_y = self.radius
-            mpi=atan(1.0)*4.0;
-            self.tilt_points.append((0.0, self.radius))
-            self.tilt_points.append((-self.radius*cos(mpi/6.0),\
-                    -self.radius*sin(mpi/6.0)))
-            self.tilt_points.append((self.radius*cos(mpi/6.0), \
-                    self.radius*sin(mpi/6.0)))
+            mpi = atan(1.0) * 4.0;
+            rcmpi, rsmpi = r * cos(mpi / 6.0), r * sin(mpi / 6.0)
+            r = self.radius
+            self.tilt_points.append((0.0, r))
+            self.tilt_points.append((-rcmpi, -rsmpi))
+            self.tilt_points.append((rcmpi, rsmpi))
         else:
             # rectangular
-            x_cnt, y_cnt = parse_pair(
-                config, ('probe_count', '3'), check=False, cast=int, minval=3)
+            x_cnt, y_cnt = parse_pair(config, ('probe_count', '3'), 
+                check=False, cast=int, minval=3)
             min_x, min_y = parse_pair(config, ('mesh_min',))
             max_x, max_y = parse_pair(config, ('mesh_max',))
             if max_x <= min_x or max_y <= min_y:
                 raise config.error('bed_mesh: invalid min/max points')
             self.tilt_points.append((min_x, min_y))
             self.tilt_points.append((max_x, min_y))
-            self.tilt_points.append((0.5*(max_x+min_x), max_y))
+            self.tilt_points.append((0.5 * (max_x + min_x), max_y))
 
         self.mesh_params['x_count'] = x_cnt
         self.mesh_params['y_count'] = y_cnt
@@ -501,15 +501,11 @@ class BedMeshCalibrate:
     cmd_BED_MESH_CALIBRATE_help = "Perform Mesh Bed Leveling"
     def cmd_BED_MESH_CALIBRATE(self, params):
         self.build_map = False
-        self.start_calibration(params)
+        self.bedmesh.set_mesh(None)
+        self.probed_matrix_backup = None
+        self.probe_helper.start_probe(params)
     cmd_BED_MESH_TILT_help = "Tilt active mesh to match current attitude of bed"
     def cmd_BED_MESH_TILT(self, params):
-        self.start_tilting(params)
-    def start_calibration(self, params):
-        self.bedmesh.set_mesh(None)
-        self.probed_matrix_backup=None
-        self.probe_helper.start_probe(params)
-    def start_tilting(self, params):
         if self.bedmesh.z_mesh is None:
             self.gcode.respond_info("No mesh! Nothing to tilt!");
         else:
@@ -549,36 +545,36 @@ class BedMeshCalibrate:
         pts = [self._calculate_delta_z(pos, z_offset) for pos in positions]
 
         # cross product of vectors defined by 3 probed points
-        cx=pts[1][2]*(pts[0][1] - pts[2][1]) + \
+        cx = pts[1][2]*(pts[0][1] - pts[2][1]) + \
                 pts[0][2]*(-pts[1][1] + pts[2][1]) + \
                 (-pts[0][1] + pts[1][1])*pts[2][2]
-        cy=pts[0][2]*(pts[1][0] - pts[2][0]) +\
+        cy = pts[0][2]*(pts[1][0] - pts[2][0]) +\
                 pts[1][2]*(-pts[0][0] + pts[2][0]) + \
                 ( pts[0][0] - pts[1][0])*pts[2][2]
-        cz=pts[1][1]*(pts[0][0] - pts[2][0]) + \
+        cz = pts[1][1]*(pts[0][0] - pts[2][0]) + \
                 pts[0][1]*(-pts[1][0] + pts[2][0]) + \
                 (-pts[0][0] + pts[1][0])*pts[2][1]
         # self.gcode.respond_info("Normal to plane is [%f,%f,%f]" % (cx,cy,cz))
         # calcuate d in the equation of plane cx*X+cy*Y+cz*Zd==d
-        d=cx*pts[0][0]+cy*pts[0][1]+cz*pts[0][2]
+        d = cx*pts[0][0]+cy*pts[0][1]+cz*pts[0][2]
 
         # now for any (x,y) z defines as (d-cx*X-cy*Y)/cz
-        z_correction=[-cx/cz,-cy/cz,d/cz]
+        zcorr = [-cx/cz, -cy/cz, d/cz]
 
         params = self.bedmesh.z_mesh.mesh_params
 
         x_cnt = params['x_count']
         y_cnt = params['y_count']
-        min_x=params['min_x']
-        min_y=params['min_y']
+        min_x = params['min_x']
+        min_y = params['min_y']
         x_dist = (params['max_x'] -params['min_x']) / (x_cnt - 1)
         y_dist = (params['max_y'] -params['min_y']) / (y_cnt - 1)
         for i in range(x_cnt):
             for j in range(y_cnt):
-                xx=(min_x+i*x_dist)
-                yy=(min_y+j*y_dist)
-                Zcorr=z_correction[0]*xx+z_correction[1]*yy+z_correction[2]
-                t_probed_matrix[j][i]+=Zcorr
+                xx = min_x + i * x_dist
+                yy = min_y + j * y_dist
+                adj = zcorr[0] * xx + zcorr[1] * yy + zcorr[2]
+                t_probed_matrix[j][i] += adj
 
         mesh = ZMesh(params)
         try:
@@ -587,11 +583,8 @@ class BedMeshCalibrate:
             self.probed_matrix = copy.deepcopy(self.probed_matrix_backup)
             raise self.gcode.error(e.message)
         self.bedmesh.set_mesh(mesh)
-
         self.probed_matrix = t_probed_matrix
-
         self.gcode.respond_info("Mesh Bed Tilting Complete")
-
 
     def probe_finalize(self, offsets, positions):
         x_offset, y_offset, z_offset = offsets

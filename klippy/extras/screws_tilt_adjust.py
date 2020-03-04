@@ -41,7 +41,6 @@ class ScrewsTiltAdjust:
                                                     self.probe_finalize,
                                                     default_points=points)
         self.probe_helper.minimum_points(3)
-        self.probe_helper.use_xy_offsets(True)
         # Register command
         self.gcode = self.printer.lookup_object('gcode')
         self.gcode.register_command("SCREWS_TILT_CALCULATE",
