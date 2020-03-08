@@ -525,7 +525,8 @@ class BedMeshCalibrate:
     # Look up z position according to the active mesh and
     # compare with probed height
     def _calculate_delta_z(self, pos, z_offset):
-        z_in_mesh = self.bedmesh.z_mesh.calc_z(*pos[0:2]) + z_offset
+        z_in_mesh = self.bedmesh.z_mesh.calc_z(*pos[0:2]) \
+            + self.bedmesh.z_mesh.mesh_offset + z_offset
         delta_z = pos[2] - z_in_mesh;
         return [pos[0], pos[1], delta_z]
 
