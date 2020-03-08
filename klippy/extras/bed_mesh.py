@@ -12,11 +12,13 @@ import collections
 import copy
 
 PROFILE_VERSION = 1
-PROFILE_OPTIONS = {
-    'min_x': float, 'max_x': float, 'min_y': float, 'max_y': float,
-    'x_count': int, 'y_count': int, 'mesh_x_pps': int, 'mesh_y_pps': int,
-    'algo': str, 'tension': float
-}
+PROFILE_OPTIONS = collections.OrderedDict([
+    ('x_count', int), ('y_count', int), 
+    ('mesh_x_pps', int), ('mesh_y_pps', int),
+    ('algo', str), ('tension', float),
+    ('min_x', float), ('max_x', float),
+    ('min_y', float), ('max_y', float),
+])
 
 class BedMeshError(Exception):
     pass
@@ -265,23 +267,23 @@ class BedMeshCalibrate:
             self.radius = math.floor(self.radius * 10) / 10
             min_x = min_y = -self.radius
             max_x = max_y = self.radius
-            mpi=atan(1.0)*4.0;
-            self.tilt_points.append((0.0, self.radius))
-            self.tilt_points.append((-self.radius*cos(mpi/6.0),\
-                    -self.radius*sin(mpi/6.0)))
-            self.tilt_points.append((self.radius*cos(mpi/6.0), \
-                    self.radius*sin(mpi/6.0)))
+            mpi = atan(1.0) * 4.0;
+            rcmpi, rsmpi = r * cos(mpi / 6.0), r * sin(mpi / 6.0)
+            r = self.radius
+            self.tilt_points.append((0.0, r))
+            self.tilt_points.append((-rcmpi, -rsmpi))
+            self.tilt_points.append((rcmpi, rsmpi))
         else:
             # rectangular
-            x_cnt, y_cnt = parse_pair(
-                config, ('probe_count', '3'), check=False, cast=int, minval=3)
+            x_cnt, y_cnt = parse_pair(config, ('probe_count', '3'), 
+                check=False, cast=int, minval=3)
             min_x, min_y = parse_pair(config, ('mesh_min',))
             max_x, max_y = parse_pair(config, ('mesh_max',))
             if max_x <= min_x or max_y <= min_y:
                 raise config.error('bed_mesh: invalid min/max points')
             self.tilt_points.append((min_x, min_y))
             self.tilt_points.append((max_x, min_y))
-            self.tilt_points.append((0.5*(max_x+min_x), max_y))
+            self.tilt_points.append((0.5 * (max_x + min_x), max_y))
 
         self.mesh_params['x_count'] = x_cnt
         self.mesh_params['y_count'] = y_cnt
@@ -427,23 +429,30 @@ class BedMeshCalibrate:
                 "Unable to save to profile [%s], the bed has not been probed"
                 % (prof_name))
             return
+        if self.probed_matrix_backup is not None:
+            self.gcode.respond_info(
+                "NOTE: mesh has been tilted, saving untilted mesh data...")
+            matrix = self.probed_matrix_backup
+        else:
+            matrix = self.probed_matrix
         configfile = self.printer.lookup_object('configfile')
         cfg_name = self.name + " " + prof_name
         # set params
         z_values = ""
-        for line in self.probed_matrix:
+        for line in matrix:
             z_values += "\n  "
             for p in line:
                 z_values += "%.6f, " % p
             z_values = z_values[:-2]
         configfile.set(cfg_name, 'version', PROFILE_VERSION)
         configfile.set(cfg_name, 'points', z_values)
-        for key, value in self.mesh_params.iteritems():
+        params = self.bedmesh.z_mesh.mesh_params
+        for key, value in params.iteritems():
             configfile.set(cfg_name, key, value)
         # save copy in local storage
         self.profiles[prof_name] = profile = {}
-        profile['points'] = list(self.probed_matrix)
-        profile['mesh_params'] = collections.OrderedDict(self.mesh_params)
+        profile['points'] = list(matrix)
+        profile['mesh_params'] = collections.OrderedDict(params)
         self.gcode.respond_info(
             "Bed Mesh state has been saved to profile [%s]\n"
             "for the current session.  The SAVE_CONFIG command will\n"
@@ -496,16 +505,11 @@ class BedMeshCalibrate:
     cmd_BED_MESH_CALIBRATE_help = "Perform Mesh Bed Leveling"
     def cmd_BED_MESH_CALIBRATE(self, params):
         self.build_map = False
-        self.start_calibration(params)
+        self.bedmesh.set_mesh(None)
+        self.probed_matrix_backup = None
+        self.probe_helper.start_probe(params)
     cmd_BED_MESH_TILT_help = "Tilt active mesh to match current attitude of bed"
     def cmd_BED_MESH_TILT(self, params):
-        self.start_tilting(params)
-    def start_calibration(self, params):
-        self.bedmesh.set_mesh(None)
-        self.probed_matrix_backup=None
-        self.probe_helper.start_probe(params)
-    def start_tilting(self, params):
-        logging.info("In start_tilting")
         if self.bedmesh.z_mesh is None:
             self.gcode.respond_info("No mesh! Nothing to tilt!");
         else:
@@ -522,6 +526,12 @@ class BedMeshCalibrate:
         else:
             print_func("bed_mesh: bed has not been probed")
 
+    # Look up z position according to the active mesh and 
+    # compare with probed height
+    def _calculate_delta_z(self, pos, z_offset):
+        z_in_mesh = self.bedmesh.z_mesh.calc_z(*pos[0:2]) + z_offset
+        delta_z = pos[2] - z_in_mesh;
+        return [pos[0], pos[1], delta_z]
 
     def tilt_probe_finalize(self, offsets, positions):
         x_offset, y_offset, z_offset = offsets
@@ -536,45 +546,39 @@ class BedMeshCalibrate:
 
         t_probed_matrix = copy.deepcopy(self.probed_matrix_backup)
         self.bedmesh.z_mesh.build_mesh(t_probed_matrix)
-        pts = []
-        # shift measured positions
-        for pos in positions:
-            # offset according to the mesh
-            z_in_mesh = self.bedmesh.z_mesh.calc_z(*pos[0:2]) + z_offset
-            z_delta = pos[2] - z_in_mesh;
-            pts.append([pos[0],pos[1],z_delta])
+        pts = [self._calculate_delta_z(pos, z_offset) for pos in positions]
 
         # cross product of vectors defined by 3 probed points
-        cx=pts[1][2]*(pts[0][1] - pts[2][1]) + \
+        cx = pts[1][2]*(pts[0][1] - pts[2][1]) + \
                 pts[0][2]*(-pts[1][1] + pts[2][1]) + \
                 (-pts[0][1] + pts[1][1])*pts[2][2]
-        cy=pts[0][2]*(pts[1][0] - pts[2][0]) +\
+        cy = pts[0][2]*(pts[1][0] - pts[2][0]) +\
                 pts[1][2]*(-pts[0][0] + pts[2][0]) + \
                 ( pts[0][0] - pts[1][0])*pts[2][2]
-        cz=pts[1][1]*(pts[0][0] - pts[2][0]) + \
+        cz = pts[1][1]*(pts[0][0] - pts[2][0]) + \
                 pts[0][1]*(-pts[1][0] + pts[2][0]) + \
                 (-pts[0][0] + pts[1][0])*pts[2][1]
         # self.gcode.respond_info("Normal to plane is [%f,%f,%f]" % (cx,cy,cz))
         # calcuate d in the equation of plane cx*X+cy*Y+cz*Zd==d
-        d=cx*pts[0][0]+cy*pts[0][1]+cz*pts[0][2]
+        d = cx*pts[0][0]+cy*pts[0][1]+cz*pts[0][2]
 
         # now for any (x,y) z defines as (d-cx*X-cy*Y)/cz
-        z_correction=[-cx/cz,-cy/cz,d/cz]
+        zcorr = [-cx/cz, -cy/cz, d/cz]
 
         params = self.bedmesh.z_mesh.mesh_params
 
         x_cnt = params['x_count']
         y_cnt = params['y_count']
-        min_x=params['min_x']
-        min_y=params['min_y']
+        min_x = params['min_x']
+        min_y = params['min_y']
         x_dist = (params['max_x'] -params['min_x']) / (x_cnt - 1)
         y_dist = (params['max_y'] -params['min_y']) / (y_cnt - 1)
         for i in range(x_cnt):
             for j in range(y_cnt):
-                xx=(min_x+i*x_dist)
-                yy=(min_y+j*y_dist)
-                Zcorr=z_correction[0]*xx+z_correction[1]*yy+z_correction[2]
-                t_probed_matrix[j][i]+=Zcorr
+                xx = min_x + i * x_dist
+                yy = min_y + j * y_dist
+                adj = zcorr[0] * xx + zcorr[1] * yy + zcorr[2]
+                t_probed_matrix[j][i] += adj
 
         mesh = ZMesh(params)
         try:
@@ -583,12 +587,8 @@ class BedMeshCalibrate:
             self.probed_matrix = copy.deepcopy(self.probed_matrix_backup)
             raise self.gcode.error(e.message)
         self.bedmesh.set_mesh(mesh)
-
         self.probed_matrix = t_probed_matrix
-
         self.gcode.respond_info("Mesh Bed Tilting Complete")
-        self.save_profile("default")
-
 
     def probe_finalize(self, offsets, positions):
         x_offset, y_offset, z_offset = offsets
