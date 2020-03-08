@@ -219,7 +219,6 @@ class BedMeshCalibrate:
         self.bedmesh = bedmesh
         self.probed_matrix = None
         self.probed_matrix_backup = None
-        self.build_map = False
         self.tilt_points = []
         self.mesh_params = collections.OrderedDict()
         self.points = self._generate_points(config)
@@ -504,7 +503,6 @@ class BedMeshCalibrate:
             "Invalid syntax '%s'" % (params['#original']))
     cmd_BED_MESH_CALIBRATE_help = "Perform Mesh Bed Leveling"
     def cmd_BED_MESH_CALIBRATE(self, params):
-        self.build_map = False
         self.bedmesh.set_mesh(None)
         self.probed_matrix_backup = None
         self.probe_helper.start_probe(params)
