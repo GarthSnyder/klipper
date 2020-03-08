@@ -216,7 +216,7 @@ class BedMeshCalibrate:
             'relative_reference_index', None)
         self.bedmesh = bedmesh
         self.probed_matrix = None
-        self.probed_z_table_backup = None
+        self.probed_matrix_backup = None
         self.build_map = False
         self.tilt_points = []
         self.mesh_params = collections.OrderedDict()
@@ -226,9 +226,13 @@ class BedMeshCalibrate:
             config, self.probe_finalize, self.points)
         self.tilt_probe_helper = probe.ProbePointsHelper(
             config, self.tilt_probe_finalize, self.tilt_points)
+        logging.info("Tilt points:")
+        for point in self.tilt_points:
+            logging.info("%f, %f" % point)
         self.probe_helper.minimum_points(3)
         self.tilt_probe_helper.minimum_points(3)
         self.probe_helper.use_xy_offsets(True)
+        self.tilt_probe_helper.use_xy_offsets(True)
         # setup persistent storage
         self.profiles = {}
         self.incompatible_profiles = []
@@ -240,9 +244,6 @@ class BedMeshCalibrate:
         self.gcode.register_command(
             'BED_MESH_TILT', self.cmd_BED_MESH_TILT,
             desc=self.cmd_BED_MESH_TILT_help)
-        self.gcode.register_command(
-            'BED_MESH_MAP', self.cmd_BED_MESH_MAP,
-            desc=self.cmd_BED_MESH_MAP_help)
         self.gcode.register_command(
             'BED_MESH_PROFILE', self.cmd_BED_MESH_PROFILE,
             desc=self.cmd_BED_MESH_PROFILE_help)
@@ -454,7 +455,7 @@ class BedMeshCalibrate:
             raise self.gcode.error(
                 "bed_mesh: Unknown profile [%s]" % prof_name)
         self.probed_matrix = profile['points']
-        self.probed_z_table_backup = None
+        self.probed_matrix_backup = None
         zmesh = ZMesh(profile['mesh_params'])
         try:
             zmesh.build_mesh(self.probed_matrix)
@@ -492,23 +493,20 @@ class BedMeshCalibrate:
                 return
         self.gcode.respond_info(
             "Invalid syntax '%s'" % (params['#original']))
-    cmd_BED_MESH_MAP_help = "Probe the bed and serialize output"
-    def cmd_BED_MESH_MAP(self, params):
-        self.build_map = True
-        self.start_calibration(params)
     cmd_BED_MESH_CALIBRATE_help = "Perform Mesh Bed Leveling"
     def cmd_BED_MESH_CALIBRATE(self, params):
         self.build_map = False
         self.start_calibration(params)
-    cmd_BED_MESH_TILT_help = "Perform Tilting of existing Mesh"
+    cmd_BED_MESH_TILT_help = "Tilt active mesh to match current attitude of bed"
     def cmd_BED_MESH_TILT(self, params):
         self.start_tilting(params)
     def start_calibration(self, params):
         self.bedmesh.set_mesh(None)
-        self.probed_z_table_backup=None
+        self.probed_matrix_backup=None
         self.probe_helper.start_probe(params)
     def start_tilting(self, params):
-        if self.bedmesh.z_mesh.mesh_z_table is None:
+        logging.info("In start_tilting")
+        if self.bedmesh.z_mesh is None:
             self.gcode.respond_info("No mesh! Nothing to tilt!");
         else:
             self.tilt_probe_helper.start_probe(params)
@@ -526,32 +524,25 @@ class BedMeshCalibrate:
 
 
     def tilt_probe_finalize(self, offsets, positions):
-        x_offset = offsets[0]
-        y_offset = offsets[1]
-        z_offset = offsets[2]
-        self.gcode.respond_info \
-                ("offsets: %f %f %f" % (x_offset,y_offset,z_offset) );
-
-        params=self.bedmesh.z_mesh.probe_params
+        x_offset, y_offset, z_offset = offsets
+        self.gcode.respond_info("offsets: %f %f %f" % tuple(offsets));
 
         if self.relative_reference_index is not None:
-            # zero out probe z offset and
-            # set offset relative to reference index
-            z_offset = positions[self.relative_reference_index][2]
+            rri = self.relative_reference_index
+            z_offset = self.bedmesh.z_mesh.calc_z(*self.points[rri][0:2])
 
-        if self.probed_z_table_backup is None:
-            self.probed_z_table_backup = copy.deepcopy(self.probed_z_table)
+        if self.probed_matrix_backup is None:
+            self.probed_matrix_backup = copy.deepcopy(self.probed_matrix)
 
-        t_probed_z_table=copy.deepcopy(self.probed_z_table_backup)
-        self.bedmesh.z_mesh.build_mesh(t_probed_z_table)
-        pts=[]
+        t_probed_matrix = copy.deepcopy(self.probed_matrix_backup)
+        self.bedmesh.z_mesh.build_mesh(t_probed_matrix)
+        pts = []
         # shift measured positions
         for pos in positions:
             # offset according to the mesh
-            calc_Zval=self.bedmesh.z_mesh.\
-                    calc_z(pos[0]+x_offset,pos[1]+y_offset)+z_offset
-            ZvalCorrectioncorr=pos[2] -calc_Zval;
-            pts.append([pos[0],pos[1],ZvalCorrectioncorr] )
+            z_in_mesh = self.bedmesh.z_mesh.calc_z(*pos[0:2]) + z_offset
+            z_delta = pos[2] - z_in_mesh;
+            pts.append([pos[0],pos[1],z_delta])
 
         # cross product of vectors defined by 3 probed points
         cx=pts[1][2]*(pts[0][1] - pts[2][1]) + \
@@ -570,6 +561,8 @@ class BedMeshCalibrate:
         # now for any (x,y) z defines as (d-cx*X-cy*Y)/cz
         z_correction=[-cx/cz,-cy/cz,d/cz]
 
+        params = self.bedmesh.z_mesh.mesh_params
+
         x_cnt = params['x_count']
         y_cnt = params['y_count']
         min_x=params['min_x']
@@ -581,17 +574,17 @@ class BedMeshCalibrate:
                 xx=(min_x+i*x_dist)
                 yy=(min_y+j*y_dist)
                 Zcorr=z_correction[0]*xx+z_correction[1]*yy+z_correction[2]
-                t_probed_z_table[j][i]+=Zcorr
+                t_probed_matrix[j][i]+=Zcorr
 
         mesh = ZMesh(params)
         try:
-            mesh.build_mesh(t_probed_z_table)
+            mesh.build_mesh(t_probed_matrix)
         except BedMeshError as e:
-            self.probed_z_table = copy.deepcopy(self.probed_z_table_backup)
+            self.probed_matrix = copy.deepcopy(self.probed_matrix_backup)
             raise self.gcode.error(e.message)
         self.bedmesh.set_mesh(mesh)
 
-        self.probed_z_table=t_probed_z_table
+        self.probed_matrix = t_probed_matrix
 
         self.gcode.respond_info("Mesh Bed Tilting Complete")
         self.save_profile("default")
