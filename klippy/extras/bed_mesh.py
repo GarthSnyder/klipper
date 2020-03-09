@@ -553,19 +553,20 @@ class BedMeshCalibrate:
         # the tilt model.
 
         adj_params = ['wx', 'wy', 'wc']
+        precision = 1E3
         def tilt_error(params):
             wx, wy, wc = [params[param] for param in adj_params]
             total_error = 0.0
             try:
                 for ex, ey, ez in positions:
                     predicted_z = wx * ex + wy * ey + wc
-                    total_error += (predicted_z - ez) ** 2
-                return total_error * 1E4
+                    total_error += (predicted_z / precision - ez) ** 2
+                return total_error
             except ZeroDivisionError:
                 return 1E100
         best_fit = mathutil.coordinate_descent(adj_params, \
             {param_name: 1. for param_name in adj_params}, tilt_error)
-        izcorr = [best_fit[param] for param in adj_params]
+        izcorr = [best_fit[param] / precision for param in adj_params]
 
         pts = [self._calculate_delta_z(pos) for pos in positions]
 
