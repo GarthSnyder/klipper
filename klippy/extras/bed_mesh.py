@@ -575,7 +575,7 @@ class BedMeshCalibrate:
         d = cx*pts[0][0]+cy*pts[0][1]+cz*pts[0][2]
 
         logging.info("Tilt probe results:")
-        for i, it, cl in [(icx, cx), (icy, cy), (icz, cz), (iid, d)].enumerate():
+        for i, (it, cl) in enumerate([(icx, cx), (icy, cy), (icz, cz), (iid, d)]):
             logging.info("    %s = %.4f by iteration, " \
                 "%.4f in closed form, err = %.4f" % \
                 (adj_params[i], it, cl, abs(cl - it)))
