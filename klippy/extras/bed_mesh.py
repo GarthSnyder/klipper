@@ -545,7 +545,7 @@ class BedMeshCalibrate:
         # SSE of Z error at each point
         adj_params = ['wx', 'wy', 'wc']
         def tilt_error(params):
-            wx, wy, wz = [params[param] for param in adj_params]
+            wx, wy, wc = [params[param] for param in adj_params]
             total_error = 0.0
             try:
                 for ex, ey, ez in positions:
