@@ -526,26 +526,36 @@ class BedMeshCalibrate:
 
     # Look up z position according to the active mesh and
     # compare with probed height
-    def _calculate_delta_z(self, pos, z_offset):
+    def _calculate_delta_z(self, pos):
         z_in_mesh = self.bedmesh.z_mesh.calc_z(*pos[0:2]) \
-            + self.bedmesh.z_mesh.mesh_offset + z_offset
+            + self.bedmesh.z_mesh.mesh_offset
         delta_z = pos[2] - z_in_mesh;
         return [pos[0], pos[1], delta_z]
 
     def tilt_probe_finalize(self, offsets, positions):
-        x_offset, y_offset, z_offset = offsets
         self.gcode.respond_info("offsets: %f %f %f" % tuple(offsets));
-
-        if self.relative_reference_index is not None:
-            rri = self.relative_reference_index
-            z_offset = self.bedmesh.z_mesh.calc_z(*self.points[rri][0:2])
 
         if self.probed_matrix_backup is None:
             self.probed_matrix_backup = copy.deepcopy(self.probed_matrix)
 
         t_probed_matrix = copy.deepcopy(self.probed_matrix_backup)
         self.bedmesh.z_mesh.build_mesh(t_probed_matrix)
-        pts = [self._calculate_delta_z(pos, z_offset) for pos in positions]
+
+        # SSE of Z error at each point
+        adj_params = ['cx', 'cy', 'cz', 'd']
+        def tilt_error(params):
+            ecx, ecy, ecz, ed = [params[param] for param in adj_params]
+            total_error = 0.0
+            for pos in positions:
+                ex, ey, ez = pos
+                predicted_z = (ed - ecx * ex - ecy * ey) / ecz
+                total_error += (predicted_z - ez) ** 2
+            return total_error
+        best_fit = mathutil.coordinate_descent(adj_params, \
+            {param_name: 1. for param_name in adj_params}, tilt_error)
+        icx, icy, icz, iid = [best_fit[param] for param in adj_params]
+
+        pts = [self._calculate_delta_z(pos) for pos in positions]
 
         # cross product of vectors defined by 3 probed points
         cx = pts[1][2]*(pts[0][1] - pts[2][1]) + \
@@ -560,6 +570,11 @@ class BedMeshCalibrate:
         # self.gcode.respond_info("Normal to plane is [%f,%f,%f]" % (cx,cy,cz))
         # calcuate d in the equation of plane cx*X+cy*Y+cz*Zd==d
         d = cx*pts[0][0]+cy*pts[0][1]+cz*pts[0][2]
+
+        logging.info("Tilt probe results:")
+        for i, pair in [(icx, cx), (icy, cy), (icz, cz), (iid, d)].enumerate():
+            logging.info(f"    {adj_params[i]} = {pair[0]} by iteration, " \
+                f"{pair[1]} in closed form, err = {abs(pair[1] - pair[0])}")
 
         # now for any (x,y) z defines as (d-cx*X-cy*Y)/cz
         zcorr = [-cx/cz, -cy/cz, d/cz]
