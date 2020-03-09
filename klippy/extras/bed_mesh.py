@@ -530,15 +530,18 @@ class BedMeshCalibrate:
     def _calculate_delta_z(self, pos):
         z_in_mesh = self.bedmesh.z_mesh.calc_z(*pos[0:2]) \
             + self.bedmesh.z_mesh.mesh_offset
-        delta_z = pos[2] - z_in_mesh;
-        return [pos[0], pos[1], delta_z]
+        return [pos[0], pos[1], pos[2] - z_in_mesh];
 
     def tilt_probe_finalize(self, offsets, positions):
-        self.gcode.respond_info("offsets: %f %f %f" % tuple(offsets));
+        self.gcode.respond_info("offsets: %f %f %f" % tuple(offsets))
+
+        def _offset_point(coords):
+            return [c + off for c, off in zip(coords, offsets)]
+        offset_pts = [_offset_point(pos) for pos in positions]
+        pts = [_calculate_delta_z(pt) for pt in offset_pts]
 
         if self.probed_matrix_backup is None:
             self.probed_matrix_backup = copy.deepcopy(self.probed_matrix)
-
         t_probed_matrix = copy.deepcopy(self.probed_matrix_backup)
         self.bedmesh.z_mesh.build_mesh(t_probed_matrix)
 
@@ -553,12 +556,12 @@ class BedMeshCalibrate:
         # the tilt model.
 
         adj_params = ['wx', 'wy', 'wc']
-        precision = 1E3
+        precision = 1
         def tilt_error(params):
             wx, wy, wc = [params[param] for param in adj_params]
             total_error = 0.0
             try:
-                for ex, ey, ez in positions:
+                for ex, ey, ez in pts:
                     predicted_z = wx * ex + wy * ey + wc
                     total_error += (predicted_z / precision - ez) ** 2
                 return total_error
@@ -567,8 +570,6 @@ class BedMeshCalibrate:
         best_fit = mathutil.coordinate_descent(adj_params, \
             {param_name: 1. for param_name in adj_params}, tilt_error)
         izcorr = [best_fit[param] / precision for param in adj_params]
-
-        pts = [self._calculate_delta_z(pos) for pos in positions]
 
         # cross product of vectors defined by 3 probed points
         cx = pts[1][2]*(pts[0][1] - pts[2][1]) + \
