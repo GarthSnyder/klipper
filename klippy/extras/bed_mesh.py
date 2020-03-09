@@ -543,20 +543,20 @@ class BedMeshCalibrate:
         self.bedmesh.z_mesh.build_mesh(t_probed_matrix)
 
         # SSE of Z error at each point
-        adj_params = ['cx', 'cy', 'cz', 'd']
+        adj_params = ['wx', 'wy', 'wc']
         def tilt_error(params):
-            ecx, ecy, ecz, ed = [params[param] for param in adj_params]
+            wx, wy, wz = [params[param] for param in adj_params]
             total_error = 0.0
             try:
                 for ex, ey, ez in positions:
-                    predicted_z = (ed - ecx * ex - ecy * ey) / ecz
+                    predicted_z = wx * ex + wy * ey + wc
                     total_error += (predicted_z - ez) ** 2
                 return total_error
             except ZeroDivisionError:
                 return 1E100
         best_fit = mathutil.coordinate_descent(adj_params, \
             {param_name: 1. for param_name in adj_params}, tilt_error)
-        icx, icy, icz, iid = [best_fit[param] for param in adj_params]
+        izcorr = [best_fit[param] for param in adj_params]
 
         pts = [self._calculate_delta_z(pos) for pos in positions]
 
@@ -574,14 +574,14 @@ class BedMeshCalibrate:
         # calcuate d in the equation of plane cx*X+cy*Y+cz*Zd==d
         d = cx*pts[0][0]+cy*pts[0][1]+cz*pts[0][2]
 
-        logging.info("Tilt probe results:")
-        for i, (it, cl) in enumerate([(icx, cx), (icy, cy), (icz, cz), (iid, d)]):
-            logging.info("    %s = %.4f by iteration, " \
-                "%.4f in closed form, err = %.4f" % \
-                (adj_params[i], it, cl, abs(cl - it)))
-
         # now for any (x,y) z defines as (d-cx*X-cy*Y)/cz
         zcorr = [-cx/cz, -cy/cz, d/cz]
+
+        logging.info("Tilt probe results:")
+        for i, (ival, cval) in enumerate(zip(izcorr, zcorr)):
+            logging.info("    %s = %.4f by iteration, " \
+                "%.4f in closed form, err = %.4f" % \
+                (adj_params[i], ival, cval, abs(cval - ival)))
 
         params = self.bedmesh.z_mesh.mesh_params
 
