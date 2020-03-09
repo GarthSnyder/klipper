@@ -542,7 +542,16 @@ class BedMeshCalibrate:
         t_probed_matrix = copy.deepcopy(self.probed_matrix_backup)
         self.bedmesh.z_mesh.build_mesh(t_probed_matrix)
 
-        # SSE of Z error at each point
+        # Iteratively solve to find correction parameters that 
+        # make the original probe matrix look most similar to the 
+        # just-performed probes. The underlying model is an X tilt,
+        # a Y tilt, and a vertical displacement.
+        #
+        # The value of the constant Z displacement doesn't actually
+        # matter since we'll normalize the tilted matrix to make the 
+        # average value zero. But we need to track it while creating
+        # the tilt model.
+
         adj_params = ['wx', 'wy', 'wc']
         def tilt_error(params):
             wx, wy, wc = [params[param] for param in adj_params]
@@ -551,7 +560,7 @@ class BedMeshCalibrate:
                 for ex, ey, ez in positions:
                     predicted_z = wx * ex + wy * ey + wc
                     total_error += (predicted_z - ez) ** 2
-                return total_error
+                return total_error * 1E4
             except ZeroDivisionError:
                 return 1E100
         best_fit = mathutil.coordinate_descent(adj_params, \
