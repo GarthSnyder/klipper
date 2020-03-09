@@ -575,7 +575,7 @@ class BedMeshCalibrate:
         for i, it, cl in [(icx, cx), (icy, cy), (icz, cz), (iid, d)].enumerate():
             logging.info("    %s = %.4f by iteration, " \
                 "%.4f in closed form, err = %.4f" % \
-                (adj_params[i], it, cl, abs(cl - it))
+                (adj_params[i], it, cl, abs(cl - it)))
 
         # now for any (x,y) z defines as (d-cx*X-cy*Y)/cz
         zcorr = [-cx/cz, -cy/cz, d/cz]
