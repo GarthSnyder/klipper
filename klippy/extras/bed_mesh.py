@@ -588,8 +588,8 @@ class BedMeshCalibrate:
 
         logging.info("Tilt probe results:")
         for i, (ival, cval) in enumerate(zip(izcorr, zcorr)):
-            logging.info("    %s = %.4f by iteration, " \
-                "%.4f in closed form, err = %.4f" % \
+            logging.info("    %s = %.8f by iteration, " \
+                "%.8f in closed form, err = %.8f" % \
                 (adj_params[i], ival, cval, abs(cval - ival)))
 
         params = self.bedmesh.z_mesh.mesh_params
