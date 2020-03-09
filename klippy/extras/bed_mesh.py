@@ -552,17 +552,16 @@ class BedMeshCalibrate:
         # average value zero. But we need to maintain it while creating
         # the tilt model.
 
+        start_params = {'wx': 0.01, 'wy': 0.01, 'wc': 0.0}
         adj_params = ['wx', 'wy', 'wc']
-        start_params = {param_name: 0.1 for param_name in adj_params}
+
         def tilt_error(params):
             wx, wy, wc = [params[param] for param in adj_params]
             def point_error(ex, ey, ez):
                 predicted_z = wx * ex + wy * ey + wc
                 return predicted_z - ez
-            try:
-                return sum([point_error(*pt) ** 2 for pt in pts])
-            except ZeroDivisionError:
-                return 1E100
+            return sum([point_error(*pt) ** 2 for pt in pts])
+
         best_fit = mathutil.coordinate_descent(adj_params, \
             start_params, tilt_error, precision=1E-7)
         izcorr = [best_fit[param] for param in adj_params]
