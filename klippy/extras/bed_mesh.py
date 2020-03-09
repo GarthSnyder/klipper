@@ -10,6 +10,7 @@ import json
 import probe
 import collections
 import copy
+import mathutil
 
 PROFILE_VERSION = 1
 PROFILE_OPTIONS = collections.OrderedDict([
@@ -546,11 +547,13 @@ class BedMeshCalibrate:
         def tilt_error(params):
             ecx, ecy, ecz, ed = [params[param] for param in adj_params]
             total_error = 0.0
-            for pos in positions:
-                ex, ey, ez = pos
-                predicted_z = (ed - ecx * ex - ecy * ey) / ecz
-                total_error += (predicted_z - ez) ** 2
-            return total_error
+            try:
+                for ex, ey, ez in positions:
+                    predicted_z = (ed - ecx * ex - ecy * ey) / ecz
+                    total_error += (predicted_z - ez) ** 2
+                return total_error
+             except ZeroDivisionError:
+                return 1E100
         best_fit = mathutil.coordinate_descent(adj_params, \
             {param_name: 1. for param_name in adj_params}, tilt_error)
         icx, icy, icz, iid = [best_fit[param] for param in adj_params]
