@@ -552,7 +552,7 @@ class BedMeshCalibrate:
                     predicted_z = (ed - ecx * ex - ecy * ey) / ecz
                     total_error += (predicted_z - ez) ** 2
                 return total_error
-             except ZeroDivisionError:
+            except ZeroDivisionError:
                 return 1E100
         best_fit = mathutil.coordinate_descent(adj_params, \
             {param_name: 1. for param_name in adj_params}, tilt_error)
