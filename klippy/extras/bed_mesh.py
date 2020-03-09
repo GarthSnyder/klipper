@@ -4,12 +4,15 @@
 # Copyright (C) 2018-2019 Eric Callahan <arksine.code@gmail.com>
 #
 # This file may be distributed under the terms of the GNU GPLv3 license.
+
 import logging
 import math
 import json
 import probe
 import collections
 import copy
+import mathutil
+import tilt_points
 
 PROFILE_VERSION = 1
 PROFILE_OPTIONS = collections.OrderedDict([
@@ -226,11 +229,7 @@ class BedMeshCalibrate:
             config, self.probe_finalize, self.points)
         self.tilt_probe_helper = probe.ProbePointsHelper(
             config, self.tilt_probe_finalize, self.tilt_points)
-        logging.info("Tilt points:")
-        for point in self.tilt_points:
-            logging.info("%f, %f" % point)
         self.probe_helper.minimum_points(3)
-        self.tilt_probe_helper.minimum_points(3)
         self.probe_helper.use_xy_offsets(True)
         self.tilt_probe_helper.use_xy_offsets(True)
         # setup persistent storage
@@ -265,12 +264,6 @@ class BedMeshCalibrate:
             self.radius = math.floor(self.radius * 10) / 10
             min_x = min_y = -self.radius
             max_x = max_y = self.radius
-            mpi = math.atan(1.0) * 4.0;
-            r = self.radius
-            rcmpi, rsmpi = r * math.cos(mpi / 6.0), r * math.sin(mpi / 6.0)
-            self.tilt_points.append((0.0, r))
-            self.tilt_points.append((-rcmpi, -rsmpi))
-            self.tilt_points.append((rcmpi, rsmpi))
         else:
             # rectangular
             x_cnt, y_cnt = parse_pair(config, ('probe_count', '3'),
@@ -279,12 +272,13 @@ class BedMeshCalibrate:
             max_x, max_y = parse_pair(config, ('mesh_max',))
             if max_x <= min_x or max_y <= min_y:
                 raise config.error('bed_mesh: invalid min/max points')
-            self.tilt_points.append((min_x, min_y))
-            self.tilt_points.append((max_x, min_y))
-            self.tilt_points.append((0.5 * (max_x + min_x), max_y))
 
         self.mesh_params['x_count'] = x_cnt
         self.mesh_params['y_count'] = y_cnt
+        self.mesh_params['min_x'] = min_x
+        self.mesh_params['max_x'] = max_x
+        self.mesh_params['min_y'] = min_y
+        self.mesh_params['max_y'] = max_y
         x_dist = (max_x - min_x) / (x_cnt - 1)
         y_dist = (max_y - min_y) / (y_cnt - 1)
         # floor distances down to next hundredth
@@ -509,6 +503,16 @@ class BedMeshCalibrate:
         if self.bedmesh.z_mesh is None:
             self.gcode.respond_info("No mesh! Nothing to tilt!");
         else:
+            tpp = TiltProbePlanner(self.radius is None)
+            least = tpp.min_points()
+            n_points = self.gcode.get_int("SAMPLES", params, least,
+                minval=least, maxval=tpp.max_points())
+            self.tilt_points[:] = [] # Keep same list, PPH has it too
+            params = self.mesh_params
+            bounds = (params['min_x'], params['max_x'],
+                params['min_y'], params['max_y'])
+            points = tpp.tilt_points(n_points, *bounds)
+            self.tilt_points.extend(points)
             self.tilt_probe_helper.start_probe(params)
 
     def print_probed_positions(self, print_func):
@@ -522,45 +526,46 @@ class BedMeshCalibrate:
         else:
             print_func("bed_mesh: bed has not been probed")
 
-    # Look up z position according to the active mesh and
-    # compare with probed height
-    def _calculate_delta_z(self, pos, z_offset):
-        z_in_mesh = self.bedmesh.z_mesh.calc_z(*pos[0:2]) \
-            + self.bedmesh.z_mesh.mesh_offset + z_offset
-        delta_z = pos[2] - z_in_mesh;
-        return [pos[0], pos[1], delta_z]
-
     def tilt_probe_finalize(self, offsets, positions):
-        x_offset, y_offset, z_offset = offsets
-        self.gcode.respond_info("offsets: %f %f %f" % tuple(offsets));
-
-        if self.relative_reference_index is not None:
-            rri = self.relative_reference_index
-            z_offset = self.bedmesh.z_mesh.calc_z(*self.points[rri][0:2])
+        self.gcode.respond_info("offsets: %f %f %f" % tuple(offsets))
 
         if self.probed_matrix_backup is None:
             self.probed_matrix_backup = copy.deepcopy(self.probed_matrix)
-
         t_probed_matrix = copy.deepcopy(self.probed_matrix_backup)
         self.bedmesh.z_mesh.build_mesh(t_probed_matrix)
-        pts = [self._calculate_delta_z(pos, z_offset) for pos in positions]
 
-        # cross product of vectors defined by 3 probed points
-        cx = pts[1][2]*(pts[0][1] - pts[2][1]) + \
-                pts[0][2]*(-pts[1][1] + pts[2][1]) + \
-                (-pts[0][1] + pts[1][1])*pts[2][2]
-        cy = pts[0][2]*(pts[1][0] - pts[2][0]) +\
-                pts[1][2]*(-pts[0][0] + pts[2][0]) + \
-                ( pts[0][0] - pts[1][0])*pts[2][2]
-        cz = pts[1][1]*(pts[0][0] - pts[2][0]) + \
-                pts[0][1]*(-pts[1][0] + pts[2][0]) + \
-                (-pts[0][0] + pts[1][0])*pts[2][1]
-        # self.gcode.respond_info("Normal to plane is [%f,%f,%f]" % (cx,cy,cz))
-        # calcuate d in the equation of plane cx*X+cy*Y+cz*Zd==d
-        d = cx*pts[0][0]+cy*pts[0][1]+cz*pts[0][2]
+        def offset_point(pos):
+            return [c + off * s for c, off, s in \
+                zip(pos, offsets, [1, 1, -1])]
+        offset_pts = [offset_point(pos) for pos in positions]
+        def relative_z(pos):
+            # The mesh's mesh_offset should be zero because we
+            # just rebuilt it and didn't offset it, but for
+            # completeness...
+            z_in_mesh = self.bedmesh.z_mesh.calc_z(*pos[0:2]) \
+                + self.bedmesh.z_mesh.mesh_offset
+            return [pos[0], pos[1], pos[2] - z_in_mesh];
+        pts = [relative_z(pt) for pt in offset_pts]
 
-        # now for any (x,y) z defines as (d-cx*X-cy*Y)/cz
-        zcorr = [-cx/cz, -cy/cz, d/cz]
+        # Iteratively solve to find correction parameters that
+        # make the original probe matrix look most similar to the
+        # just-performed probes. The underlying model is an X tilt,
+        # a Y tilt, and a vertical displacement.
+
+        start_params = {'wx': 0.01, 'wy': 0.01, 'wz': 0.0}
+        adj_params = ['wx', 'wy', 'wz']
+        def tilt_error(params):
+            wx, wy, wz = [params[param] for param in adj_params]
+            def point_error(ex, ey, ez):
+                predicted_z = wx * ex + wy * ey + wz
+                return predicted_z - ez
+            return sum([point_error(*pt) ** 2 for pt in pts])
+        best_fit = mathutil.coordinate_descent(adj_params, \
+            start_params, tilt_error, precision=1E-7)
+        wx, wy, wz = [best_fit[param] for param in adj_params]
+        self.gcode.respond_info(
+            "bed correction: wx = %.6f, wy = %.6f, wz = %.3f"
+            % (wx, wy, wz))
 
         params = self.bedmesh.z_mesh.mesh_params
 
@@ -570,12 +575,19 @@ class BedMeshCalibrate:
         min_y = params['min_y']
         x_dist = (params['max_x'] -params['min_x']) / (x_cnt - 1)
         y_dist = (params['max_y'] -params['min_y']) / (y_cnt - 1)
+        total_z = 0.0
         for i in range(x_cnt):
             for j in range(y_cnt):
                 xx = min_x + i * x_dist
                 yy = min_y + j * y_dist
-                adj = zcorr[0] * xx + zcorr[1] * yy + zcorr[2]
+                adj = wx * xx + wy * yy + wz
                 t_probed_matrix[j][i] += adj
+                total_z += t_probed_matrix[j][i]
+        average_z = total_z / float(x_cnt * y_cnt)
+
+        # Normalize to average offset of zero, round to 4 digits
+        #t_probed_matrix = [[round(h - average_z, 4) for h in row] \
+        #    for row in t_probed_matrix]
 
         mesh = ZMesh(params)
         try:
@@ -585,7 +597,7 @@ class BedMeshCalibrate:
             raise self.gcode.error(e.message)
         self.bedmesh.set_mesh(mesh)
         self.probed_matrix = t_probed_matrix
-        self.gcode.respond_info("Mesh Bed Tilting Complete")
+        self.gcode.respond_info("Mesh bed tilting complete")
 
     def probe_finalize(self, offsets, positions):
         x_offset, y_offset, z_offset = offsets
@@ -990,6 +1002,25 @@ class ZMesh:
         d = m2 * (t3 - t2)
         return a + b + c + d
 
+class TiltProbePlanner:
+    def __init__(self, rectangular_bed=True):
+        self.paths = tilt_points.RECTANGULAR if rectangular_bed \
+            else tilt_points.CIRCULAR
+    def min_points(self):
+        return tilt_points.MIN_POINTS
+    def max_points(self):
+        return tilt_points.MIN_POINTS + len(self.paths) - 1
+    def tilt_points(self, n, min_x, max_x, min_y, max_y):
+        x_range, y_range = max_x - min_x, max_y - min_y
+        def rescale(x, y):
+            # Data is originally normalized to -1 to 1
+            x_frac = (x + 1.0) / 2.0
+            y_frac = (y + 1.0) / 2.0
+            scaled_x = min_x + x_range * x_frac
+            scaled_y = min_y + y_range * y_frac
+            return [scaled_x, scaled_y]
+        return [rescale(*point) for point in \
+            self.paths[n - tilt_points.MIN_POINTS]]
 
 def load_config(config):
     return BedMesh(config)
