@@ -525,25 +525,22 @@ class BedMeshCalibrate:
         else:
             print_func("bed_mesh: bed has not been probed")
 
-    # Look up z position according to the active mesh and
-    # compare with probed height
-    def _calculate_delta_z(self, pos):
-        z_in_mesh = self.bedmesh.z_mesh.calc_z(*pos[0:2]) \
-            + self.bedmesh.z_mesh.mesh_offset
-        return [pos[0], pos[1], pos[2] - z_in_mesh];
-
     def tilt_probe_finalize(self, offsets, positions):
         self.gcode.respond_info("offsets: %f %f %f" % tuple(offsets))
-
-        def _offset_point(coords):
-            return [c + off for c, off in zip(coords, offsets)]
-        offset_pts = [_offset_point(pos) for pos in positions]
-        pts = [_calculate_delta_z(pt) for pt in offset_pts]
 
         if self.probed_matrix_backup is None:
             self.probed_matrix_backup = copy.deepcopy(self.probed_matrix)
         t_probed_matrix = copy.deepcopy(self.probed_matrix_backup)
         self.bedmesh.z_mesh.build_mesh(t_probed_matrix)
+
+        def offset_point(pos):
+            return [c + off for c, off in zip(pos, offsets)]
+        offset_pts = [offset_point(pos) for pos in positions]
+        def calculate_delta_z(pos):
+            z_in_mesh = self.bedmesh.z_mesh.calc_z(*pos[0:2]) \
+                + self.bedmesh.z_mesh.mesh_offset
+            return [pos[0], pos[1], pos[2] - z_in_mesh];
+        pts = [calculate_delta_z(pt) for pt in offset_pts]
 
         # Iteratively solve to find correction parameters that 
         # make the original probe matrix look most similar to the 
@@ -552,24 +549,23 @@ class BedMeshCalibrate:
         #
         # The value of the constant Z displacement doesn't actually
         # matter since we'll normalize the tilted matrix to make the 
-        # average value zero. But we need to track it while creating
+        # average value zero. But we need to maintain it while creating
         # the tilt model.
 
         adj_params = ['wx', 'wy', 'wc']
-        precision = 1
+        start_params = {param_name: 0.1 for param_name in adj_params}
         def tilt_error(params):
             wx, wy, wc = [params[param] for param in adj_params]
-            total_error = 0.0
+            def point_error(ex, ey, ez):
+                predicted_z = wx * ex + wy * ey + wc
+                return predicted_z - ez
             try:
-                for ex, ey, ez in pts:
-                    predicted_z = wx * ex + wy * ey + wc
-                    total_error += (predicted_z / precision - ez) ** 2
-                return total_error
+                return sum([point_error(*pt) ** 2 for pt in pts])
             except ZeroDivisionError:
                 return 1E100
         best_fit = mathutil.coordinate_descent(adj_params, \
-            {param_name: 1. for param_name in adj_params}, tilt_error)
-        izcorr = [best_fit[param] / precision for param in adj_params]
+            start_params, tilt_error, precision=1E-7)
+        izcorr = [best_fit[param] for param in adj_params]
 
         # cross product of vectors defined by 3 probed points
         cx = pts[1][2]*(pts[0][1] - pts[2][1]) + \
