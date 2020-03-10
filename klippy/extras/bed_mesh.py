@@ -610,8 +610,8 @@ class BedMeshCalibrate:
         average_z = total_z / float(x_cnt * y_cnt)
 
         # Normalize to average offset of zero, round to 2 digits
-        #t_probed_matrix = [[round(h - average_z, 2) for h in row] \
-        #    for row in t_probed_matrix]
+        t_probed_matrix = [[round(h - average_z, 2) for h in row] \
+            for row in t_probed_matrix]
 
         mesh = ZMesh(params)
         try:
