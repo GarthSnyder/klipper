@@ -534,7 +534,8 @@ class BedMeshCalibrate:
         self.bedmesh.z_mesh.build_mesh(t_probed_matrix)
 
         def offset_point(pos):
-            return [c + off for c, off in zip(pos, offsets)]
+            # return [c + off for c, off in zip(pos, offsets)]
+            return [pos[0] - offsets[0], pos[1] - offsets[1], pos[2]]
         offset_pts = [offset_point(pos) for pos in positions]
         def relative_z(pos):
             z_in_mesh = self.bedmesh.z_mesh.calc_z(*pos[0:2]) \
