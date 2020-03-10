@@ -540,7 +540,8 @@ class BedMeshCalibrate:
             z_in_mesh = self.bedmesh.z_mesh.calc_z(*pos[0:2]) \
                 + self.bedmesh.z_mesh.mesh_offset
             return [pos[0], pos[1], pos[2] - z_in_mesh];
-        pts = [relative_z(pt) for pt in offset_pts]
+        # pts = [relative_z(pt) for pt in offset_pts]
+        pts = [relative_z(pt) for pt in positions]
 
         # Iteratively solve to find correction parameters that 
         # make the original probe matrix look most similar to the 
@@ -607,8 +608,8 @@ class BedMeshCalibrate:
                 total_z += t_probed_matrix[j][i]
         average_z = total_z / float(x_cnt * y_cnt)
 
-        # Normalize to average offset of zero, round to 2 digits
-        t_probed_matrix = [[round(h - average_z, 2) for h in row] \
+        # Normalize to average offset of zero, round to 4 digits
+        t_probed_matrix = [[round(h - average_z, 4) for h in row] \
             for row in t_probed_matrix]
 
         mesh = ZMesh(params)
