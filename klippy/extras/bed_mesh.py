@@ -789,13 +789,14 @@ class ZMesh:
         # should produce an offset that is divisible by common
         # z step distances
         self.avg_z = round(self.avg_z, 2)
+        self.mesh_offset = 0.0
         self.print_mesh(logging.debug)
     def offset_mesh(self, offset):
         if self.mesh_matrix:
-            self.mesh_offset = offset
+            self.mesh_offset += offset
             for y_line in self.mesh_matrix:
                 for idx, z in enumerate(y_line):
-                    y_line[idx] = z - self.mesh_offset
+                    y_line[idx] = z - offset
     def get_x_coordinate(self, index):
         return self.mesh_x_min + self.mesh_x_dist * index
     def get_y_coordinate(self, index):
