@@ -540,8 +540,7 @@ class BedMeshCalibrate:
         offset_pts = [offset_point(pos) for pos in positions]
         def relative_z(pos):
             # The mesh's mesh_offset should be zero because we
-            # just rebuilt it and didn't offset it, but for
-            # completeness...
+            # just rebuilt it and didn't offset it
             z_in_mesh = self.bedmesh.z_mesh.calc_z(*pos[0:2]) \
                 + self.bedmesh.z_mesh.mesh_offset
             return [pos[0], pos[1], pos[2] - z_in_mesh];
@@ -575,19 +574,12 @@ class BedMeshCalibrate:
         min_y = params['min_y']
         x_dist = (params['max_x'] -params['min_x']) / (x_cnt - 1)
         y_dist = (params['max_y'] -params['min_y']) / (y_cnt - 1)
-        total_z = 0.0
         for i in range(x_cnt):
             for j in range(y_cnt):
                 xx = min_x + i * x_dist
                 yy = min_y + j * y_dist
                 adj = wx * xx + wy * yy + wz
                 t_probed_matrix[j][i] += adj
-                total_z += t_probed_matrix[j][i]
-        average_z = total_z / float(x_cnt * y_cnt)
-
-        # Normalize to average offset of zero, round to 4 digits
-        #t_probed_matrix = [[round(h - average_z, 4) for h in row] \
-        #    for row in t_probed_matrix]
 
         mesh = ZMesh(params)
         try:
@@ -805,7 +797,7 @@ class ZMesh:
         self.print_mesh(logging.debug)
     def offset_mesh(self, offset):
         if self.mesh_matrix:
-            self.mesh_offset += offset
+            self.mesh_offset = offset
             for y_line in self.mesh_matrix:
                 for idx, z in enumerate(y_line):
                     y_line[idx] = z - offset
