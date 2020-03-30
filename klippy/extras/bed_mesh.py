@@ -562,10 +562,29 @@ class BedMeshCalibrate:
             start_params, tilt_error, precision=1E-7)
         wx, wy, wz = [best_fit[param] for param in adj_params]
         self.gcode.respond_info(
-            "bed correction: wx = %.6f, wy = %.6f, wz = %.3f"
+            "bed tilt correction: wx = %.6f, wy = %.6f, wz = %.3f"
             % (wx, wy, wz))
 
         params = self.bedmesh.z_mesh.mesh_params
+
+        # If there is a relative reference index, recenter the mesh on
+        # that location (that is, make that location have a value of 0 by
+        # adding the same offset to every element of the mesh).
+        #
+        # There is no correspondence between the points probed for
+        # BED_MESH_TILT and BED_MESH_CALIBRATE, so we use the original
+        # probing matrix to determine the coordinates of the zero point.
+        #
+        # The calculations for wx, wy, and wz took account of the z_offset
+        # of the probe. Since that is a fixed offset regardless of its actual
+        # value, it should affect only the constant (wz) component. Therefore,
+        # the RRI adjustment, which also includes wz, correctly neutralizes
+        # the effect of the z_offset.
+
+        rri_adj = 0
+        if self.relative_reference_index is not None:
+            rri_point = self.points[self.relative_reference_index]
+            rri_adj = wx * rri_point[0] + wy * rri_point[1] + wz
 
         x_cnt = params['x_count']
         y_cnt = params['y_count']
@@ -577,7 +596,7 @@ class BedMeshCalibrate:
             for j in range(y_cnt):
                 xx = min_x + i * x_dist
                 yy = min_y + j * y_dist
-                adj = wx * xx + wy * yy + wz
+                adj = wx * xx + wy * yy + wz - rri_adj
                 t_probed_matrix[j][i] += adj
 
         mesh = ZMesh(params)
