@@ -367,10 +367,10 @@ mesh to reflect this information. BED_MESH_TILT lets you use a high-resolution
 bed mesh while accommodating geometric drift, changes made with bed leveling screws,
 and changes to endstops. It's fast enough to use before every print.
 
-BED_MESH_TILT probes 3 points by default. You can request that it probe up to 16
-points by including the SAMPLES option. However, it's unlikely that extra probes
-will improve your results unless your bed is particularly small or your probe is
-unreliable.
+BED_MESH_TILT probes 4 points by default. You can request that it probe anywhere
+from 3 to 16 points by including the SAMPLES option. However, it's unlikely that
+extra probes will improve your results unless your bed is particularly small or
+your probe is unreliable.
 
 To determine if additional probe points are warranted, run BED_MESH_TILT several times
 and observe the correction factors that it calculates. The Z adjustment at each

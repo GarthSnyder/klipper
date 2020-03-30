@@ -504,9 +504,8 @@ class BedMeshCalibrate:
             self.gcode.respond_info("No mesh! Nothing to tilt!");
         else:
             tpp = TiltProbePlanner(self.radius is None)
-            least = tpp.min_points()
-            n_points = self.gcode.get_int("SAMPLES", params, least,
-                minval=least, maxval=tpp.max_points())
+            n_points = self.gcode.get_int("SAMPLES", params, tpp.default_points(),
+                minval=tpp.min_points(), maxval=tpp.max_points())
             self.tilt_points[:] = [] # Keep same list, PPH has it too
             params = self.mesh_params
             bounds = (params['min_x'], params['max_x'],
@@ -1000,6 +999,8 @@ class TiltProbePlanner:
             else tilt_points.CIRCULAR
     def min_points(self):
         return tilt_points.MIN_POINTS
+    def default_points(self):
+        return tilt_points.DEFAULT_POINTS
     def max_points(self):
         return tilt_points.MIN_POINTS + len(self.paths) - 1
     def tilt_points(self, n, min_x, max_x, min_y, max_y):

@@ -35,6 +35,7 @@ import math
 from scipy.spatial.distance import cdist
 
 MIN_POINTS = 3
+DEFAULT_POINTS = 4
 
 if len(argv) != 3:
     exit(f"Usage: {argv[0]} directory N")
@@ -113,7 +114,8 @@ print(
 #
 # Garth Snyder <garth@garthsnyder.com> March, 2020
 """)
-print(f"MIN_POINTS = {MIN_POINTS}\n")
+print(f"MIN_POINTS = {MIN_POINTS}")
+print(f"DEFAULT_POINTS = {DEFAULT_POINTS}\n")
 
 print_series("RECTANGULAR", "csq%d.txt", rect_normalize, [0, 0])
 print("")
