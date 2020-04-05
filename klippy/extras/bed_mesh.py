@@ -533,6 +533,7 @@ class BedMeshCalibrate:
         t_probed_matrix = copy.deepcopy(self.probed_matrix_backup)
         self.bedmesh.z_mesh.build_mesh(t_probed_matrix)
 
+        # inputs are in nozzle coordinates - convert to bed/probe coordinates
         def offset_point(pos):
             return [c + off * s for c, off, s in \
                 zip(pos, offsets, [1, 1, -1])]
@@ -860,7 +861,7 @@ class ZMesh:
         t = (coord - cfunc(idx)) / mesh_dist
         return constrain(t, 0., 1.), idx
     def _sample_direct(self, z_matrix):
-        self.mesh_matrix = z_matrix
+        self.mesh_matrix = copy.deepcopy(z_matrix)
     def _sample_lagrange(self, z_matrix):
         x_mult = self.x_mult
         y_mult = self.y_mult
