@@ -499,12 +499,12 @@ class BedMeshCalibrate:
         self.probed_matrix_backup = None
         self.probe_helper.start_probe(gcmd)
     cmd_BED_MESH_TILT_help = "Tilt active mesh to match current attitude of bed"
-    def cmd_BED_MESH_TILT(self, params):
+    def cmd_BED_MESH_TILT(self, gcmd):
         if self.bedmesh.z_mesh is None:
-            self.gcode.respond_info("No mesh! Nothing to tilt!");
+            gcmd.respond_info("No mesh! Nothing to tilt!");
         else:
             tpp = TiltProbePlanner(self.radius is None)
-            n_points = self.gcode.get_int("SAMPLES", params,
+            n_points = gcmd.get_int("SAMPLES",
                 tpp.default_points(), minval=tpp.min_points(),
                 maxval=tpp.max_points())
             self.tilt_points[:] = [] # Keep same list, PPH has it too
@@ -513,7 +513,7 @@ class BedMeshCalibrate:
                 params['min_y'], params['max_y'])
             points = tpp.tilt_points(n_points, *bounds)
             self.tilt_points.extend(points)
-            self.tilt_probe_helper.start_probe(params)
+            self.tilt_probe_helper.start_probe(gcmd)
 
     def print_probed_positions(self, print_func):
         if self.probed_matrix is not None:
