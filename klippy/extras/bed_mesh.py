@@ -299,10 +299,17 @@ class BedMeshCalibrate:
             config, self.probe_finalize, self._get_adjusted_points())
         self.probe_helper.minimum_points(3)
         self.probe_helper.use_xy_offsets(True)
+        self.tilt_points = []
+        self.tilt_probe_helper = probe.ProbePointsHelper(
+            config, self.tilt_probe_finalize, self.tilt_points)
+        self.tilt_probe_helper.use_xy_offsets(True)
         self.gcode = self.printer.lookup_object('gcode')
         self.gcode.register_command(
             'BED_MESH_CALIBRATE', self.cmd_BED_MESH_CALIBRATE,
             desc=self.cmd_BED_MESH_CALIBRATE_help)
+        self.gcode.register_command(
+            'BED_MESH_TILT', self.cmd_BED_MESH_TILT,
+            desc=self.cmd_BED_MESH_TILT_help)
     def _generate_points(self, error):
         x_cnt = self.mesh_config['x_count']
         y_cnt = self.mesh_config['y_count']
@@ -720,6 +727,108 @@ class BedMeshCalibrate:
         self.bedmesh.set_mesh(z_mesh)
         self.gcode.respond_info("Mesh Bed Leveling Complete")
         self.bedmesh.save_profile(self._profile_name)
+
+    cmd_BED_MESH_TILT_help = "Tilt active mesh to match current attitude of bed"
+
+    def cmd_BED_MESH_TILT(self, gcmd):
+        if self.bedmesh.z_mesh is None:
+            gcmd.respond_info("No mesh! Nothing to tilt!");
+        else:
+            tpp = TiltProbePlanner(self.radius is None)
+            n_points = gcmd.get_int("SAMPLES",
+                tpp.default_points(), minval=tpp.min_points(),
+                maxval=tpp.max_points())
+            self.tilt_points[:] = [] # Keep same list, PPH has it too
+            config = self.mesh_config
+            bounds = (config['min_x'], config['max_x'],
+                config['min_y'], config['max_y'])
+            points = tpp.tilt_points(n_points, *bounds)
+            self.tilt_points.extend(points)
+            self.tilt_probe_helper.start_probe(gcmd)
+
+    def tilt_probe_finalize(self, offsets, positions):
+
+        self.gcode.respond_info("offsets: %f %f %f" % tuple(offsets))
+
+        t_probed_matrix = copy.deepcopy(self.z_mesh.probed_matrix)
+        self.bedmesh.z_mesh.build_mesh(t_probed_matrix)
+
+        # inputs are in nozzle coordinates - convert to bed/probe coordinates
+        def offset_point(pos):
+            return [c + off * s for c, off, s in \
+                zip(pos, offsets, [1, 1, -1])]
+        offset_pts = [offset_point(pos) for pos in positions]
+        def relative_z(pos):
+            # The mesh's mesh_offset should be zero because we
+            # just rebuilt it and didn't offset it
+            z_in_mesh = self.bedmesh.z_mesh.calc_z(*pos[0:2]) \
+                + self.bedmesh.z_mesh.mesh_offset
+            return [pos[0], pos[1], pos[2] - z_in_mesh];
+        pts = [relative_z(pt) for pt in offset_pts]
+
+        # Iteratively solve to find correction parameters that
+        # make the original probe matrix look most similar to the
+        # just-performed probes. The underlying model is an X tilt,
+        # a Y tilt, and a vertical displacement.
+
+        start_params = {'wx': 0.01, 'wy': 0.01, 'wz': 0.0}
+        adj_params = ['wx', 'wy', 'wz']
+        def tilt_error(params):
+            wx, wy, wz = [params[param] for param in adj_params]
+            def point_error(ex, ey, ez):
+                predicted_z = wx * ex + wy * ey + wz
+                return predicted_z - ez
+            return sum([point_error(*pt) ** 2 for pt in pts])
+        best_fit = mathutil.coordinate_descent(adj_params, \
+            start_params, tilt_error, precision=1E-7)
+        wx, wy, wz = [best_fit[param] for param in adj_params]
+        self.gcode.respond_info(
+            "bed tilt correction: wx = %.6f, wy = %.6f, wz = %.3f"
+            % (wx, wy, wz))
+
+        params = self.bedmesh.z_mesh.mesh_params
+
+        # If there is a relative reference index, recenter the mesh on
+        # that location (that is, make that location have a value of 0 by
+        # adding the same offset to every element of the mesh).
+        #
+        # There is not necessarily any correspondence between the points probed
+        # for BED_MESH_TILT and BED_MESH_CALIBRATE, so use the original probe
+        # matrix to determine the coordinates of the zero point.
+        #
+        # The calculations for wx, wy, and wz took account of the z_offset
+        # of the probe. Since that is a fixed offset regardless of its actual
+        # value, it should affect only the constant (wz) component. Therefore,
+        # the RRI adjustment, which also includes wz, correctly neutralizes
+        # the effect of the z_offset.
+
+        rri_adj = 0
+        if self.relative_reference_index is not None:
+            rri_point = self.points[self.relative_reference_index]
+            rri_adj = wx * rri_point[0] + wy * rri_point[1] + wz
+
+        x_cnt = params['x_count']
+        y_cnt = params['y_count']
+        min_x = params['min_x']
+        min_y = params['min_y']
+        x_dist = (params['max_x'] -params['min_x']) / (x_cnt - 1)
+        y_dist = (params['max_y'] -params['min_y']) / (y_cnt - 1)
+        for i in range(x_cnt):
+            for j in range(y_cnt):
+                xx = min_x + i * x_dist
+                yy = min_y + j * y_dist
+                adj = wx * xx + wy * yy + wz - rri_adj
+                t_probed_matrix[j][i] += adj
+
+        mesh = ZMesh(params)
+        try:
+            mesh.build_mesh(t_probed_matrix)
+        except BedMeshError as e:
+            raise self.gcode.error(e.message)
+        mesh.set_mesh_offsets(self.bedmesh.z_mesh.mesh_offsets)
+        self.bedmesh.set_mesh(mesh)
+        self.gcode.respond_info("Mesh bed tilting complete")
+
     def _dump_points(self, probed_pts, corrected_pts, offsets):
         # logs generated points with offset applied, points received
         # from the finalize callback, and the list of corrected points
@@ -941,7 +1050,7 @@ class ZMesh:
         t = (coord - cfunc(idx)) / mesh_dist
         return constrain(t, 0., 1.), idx
     def _sample_direct(self, z_matrix):
-        self.mesh_matrix = z_matrix
+        self.mesh_matrix = copy.deepcopy(z_matrix)
     def _sample_lagrange(self, z_matrix):
         x_mult = self.x_mult
         y_mult = self.y_mult
@@ -1230,3 +1339,26 @@ class ProfileManager:
 
 def load_config(config):
     return BedMesh(config)
+
+class TiltProbePlanner:
+    def __init__(self, rectangular_bed=True):
+        self.paths = tilt_points.RECTANGULAR if rectangular_bed \
+            else tilt_points.CIRCULAR
+    def min_points(self):
+        return tilt_points.MIN_POINTS
+    def default_points(self):
+        return tilt_points.DEFAULT_POINTS
+    def max_points(self):
+        return tilt_points.MIN_POINTS + len(self.paths) - 1
+    def tilt_points(self, n, min_x, max_x, min_y, max_y):
+        x_range, y_range = max_x - min_x, max_y - min_y
+        def rescale(x, y):
+            # Data is originally normalized to -1 to 1
+            x_frac = (x + 1.0) / 2.0
+            y_frac = (y + 1.0) / 2.0
+            scaled_x = min_x + x_range * x_frac
+            scaled_y = min_y + y_range * y_frac
+            return [scaled_x, scaled_y]
+        return [rescale(*point) for point in \
+            self.paths[n - tilt_points.MIN_POINTS]]
+
