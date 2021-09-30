@@ -6,13 +6,16 @@
 # This file may be distributed under the terms of the GNU GPLv3 license.
 import logging, math, json, collections
 from . import probe
+import copy, mathutil, tilt_points
 
 PROFILE_VERSION = 1
-PROFILE_OPTIONS = {
-    'min_x': float, 'max_x': float, 'min_y': float, 'max_y': float,
-    'x_count': int, 'y_count': int, 'mesh_x_pps': int, 'mesh_y_pps': int,
-    'algo': str, 'tension': float
-}
+PROFILE_OPTIONS = collections.OrderedDict([
+    ('x_count', int), ('y_count', int),
+    ('mesh_x_pps', int), ('mesh_y_pps', int),
+    ('algo', str), ('tension', float),
+    ('min_x', float), ('max_x', float),
+    ('min_y', float), ('max_y', float),
+])
 
 class BedMeshError(Exception):
     pass
