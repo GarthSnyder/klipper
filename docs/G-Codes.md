@@ -466,6 +466,9 @@ The following commands are available when the
   offsets to the mesh lookup.  This is useful for printers with
   independent extruders, as an offset is necessary to produce
   correct Z adjustment after a tool change.
+- `BED_MESH_TILT [SAMPLES=<count>]`: This command probes the bed to
+  determine its current height and attitude, then adjusts the active
+  mesh to reflect this information.
 
 ### Bed Screws Helper
 
