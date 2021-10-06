@@ -278,7 +278,7 @@ class BedMesh:
 
 
 class BedMeshCalibrate:
-    ALGOS = ['lagrange', 'bicubic']
+    ALGOS = ['lagrange', 'bicubic', 'direct']
     def __init__(self, config, bedmesh):
         self.printer = config.get_printer()
         self.orig_config = {'radius': None, 'origin': None}
@@ -739,9 +739,10 @@ class BedMeshCalibrate:
                 tpp.default_points(), minval=tpp.min_points(),
                 maxval=tpp.max_points())
             self.tilt_points[:] = [] # Keep same list, PPH has it too
-            config = self.mesh_config
-            bounds = (config['min_x'], config['max_x'],
-                config['min_y'], config['max_y'])
+            config = self.orig_config
+            min_x, min_y = config['mesh_min']
+            max_x, max_y = config['mesh_max']
+            bounds = (min_x, max_x, min_y, max_y)
             points = tpp.tilt_points(n_points, *bounds)
             self.tilt_points.extend(points)
             self.tilt_probe_helper.start_probe(gcmd)
@@ -750,7 +751,7 @@ class BedMeshCalibrate:
 
         self.gcode.respond_info("offsets: %f %f %f" % tuple(offsets))
 
-        t_probed_matrix = copy.deepcopy(self.z_mesh.probed_matrix)
+        t_probed_matrix = self.bedmesh.z_mesh.get_probed_matrix()
         self.bedmesh.z_mesh.build_mesh(t_probed_matrix)
 
         # inputs are in nozzle coordinates - convert to bed/probe coordinates
@@ -759,10 +760,7 @@ class BedMeshCalibrate:
                 zip(pos, offsets, [1, 1, -1])]
         offset_pts = [offset_point(pos) for pos in positions]
         def relative_z(pos):
-            # The mesh's mesh_offset should be zero because we
-            # just rebuilt it and didn't offset it
-            z_in_mesh = self.bedmesh.z_mesh.calc_z(*pos[0:2]) \
-                + self.bedmesh.z_mesh.mesh_offset
+            z_in_mesh = self.bedmesh.z_mesh.calc_z(*pos[0:2]) 
             return [pos[0], pos[1], pos[2] - z_in_mesh];
         pts = [relative_z(pt) for pt in offset_pts]
 
