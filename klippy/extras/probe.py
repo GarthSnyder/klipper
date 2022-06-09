@@ -407,6 +407,7 @@ class ProbePointsHelper:
         # Lookup objects
         probe = self.printer.lookup_object('probe', None)
         method = gcmd.get('METHOD', 'automatic').lower()
+        self.horizontal_move_z = gcmd.get_float("HORIZONTAL_MOVE_Z", self.horizontal_move_z, above=2.0)
         self.results = []
         if probe is None or method != 'automatic':
             # Manual probe
