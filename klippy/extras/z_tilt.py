@@ -95,7 +95,7 @@ class RetryHelper:
                                         minval=0, maxval=30)
         self.retry_tolerance = gcmd.get_float('RETRY_TOLERANCE',
                                               self.default_retry_tolerance,
-                                              minval=0.0, maxval=1.0)
+                                              minval=0.0, maxval=10.0)
         self.current_retry = 0
         self.previous = None
         self.increasing = 0
