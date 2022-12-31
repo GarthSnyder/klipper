@@ -3,6 +3,7 @@
 # Copyright (C) 2018  Maks Zolin <mzolin@vorondesign.com>
 #
 # This file may be distributed under the terms of the GNU GPLv3 license.
+import re
 import logging
 from . import probe, z_tilt
 
@@ -49,8 +50,18 @@ class QuadGantryLevel:
         "Conform a moving, twistable gantry to the shape of a stationary bed")
     def cmd_QUAD_GANTRY_LEVEL(self, gcmd):
         self.z_status.reset()
+        saved_points = None
+        nonce_points = gcmd.get('POINTS', "")
+        if nonce_points:
+            # Format: "X,Y:X,Y:X,Y:X,Y"
+            nonce_coords = [float(x) for x in re.findall('[\d.]+', nonce_points)]
+            points = tuple(zip(*([iter(nonce_coords)] * 2)))
+            saved_points = self.probe_helper.probe_points
+            self.probe_helper.update_probe_points(points, 4)
         self.retry_helper.start(gcmd)
         self.probe_helper.start_probe(gcmd)
+        if saved_points:
+            self.probe_helper.update_probe_points(saved_points, 0)
     def probe_finalize(self, offsets, positions):
         # Mirror our perspective so the adjustments make sense
         # from the perspective of the gantry
