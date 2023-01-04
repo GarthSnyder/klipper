@@ -24,6 +24,8 @@ from . import probe, z_tilt
 #                  | * <-- probe0   probe3 --> * |
 # Z stepper0 ----> O                             O <---- Z stepper3
 
+import random
+
 class QuadGantryLevel:
     def __init__(self, config):
         self.printer = config.get_printer()
@@ -31,6 +33,7 @@ class QuadGantryLevel:
             "Possibly Z motor numbering is wrong")
         self.max_adjust = config.getfloat("max_adjust", 4, above=0)
         self.horizontal_move_z = config.getfloat("horizontal_move_z", 5.0)
+        self.locate_offsets = None
         self.probe_helper = probe.ProbePointsHelper(config, self.probe_finalize)
         if len(self.probe_helper.probe_points) != 4:
             raise config.error(
@@ -47,9 +50,15 @@ class QuadGantryLevel:
         self.gcode.register_command(
             'QUAD_GANTRY_LEVEL', self.cmd_QUAD_GANTRY_LEVEL,
             desc=self.cmd_QUAD_GANTRY_LEVEL_help)
+        self.gcode.register_command(
+            'LOCATE_GANTRY_CORNERS', self.cmd_LOCATE_GANTRY_CORNERS,
+            desc=self.cmd_LOCATE_GANTRY_CORNERS_help)
     cmd_QUAD_GANTRY_LEVEL_help = (
         "Conform a moving, twistable gantry to the shape of a stationary bed")
+    cmd_LOCATE_GANTRY_CORNERS_help = (
+        "Given a known-level gantry, calculate the locations of the Z steppers")
     def cmd_QUAD_GANTRY_LEVEL(self, gcmd):
+        self.locating = False
         self.z_status.reset()
         saved_points = None
         nonce_points = gcmd.get('POINTS', "")
@@ -64,6 +73,13 @@ class QuadGantryLevel:
         if saved_points:
             self.probe_helper.update_probe_points(saved_points, 0)
     def probe_finalize(self, offsets, positions):
+        # Handle LOCATE_GANTRY_CORNERS case
+        if self.locate_offsets:
+            for result in positions:
+                offset = [result[i] + offsets[i] for i in range(2)]
+                offset.append(result[2])
+                self.gcode.respond_info('>>> ' + ','.join([str(o) for o in offset]))
+            return "done"
         # Mirror our perspective so the adjustments make sense
         # from the perspective of the gantry
         z_positions = [self.horizontal_move_z - p[2] for p in positions]
@@ -123,7 +139,20 @@ class QuadGantryLevel:
         self.z_helper.adjust_steppers(z_adjust, speed)
         return self.z_status.check_retry_result(
             self.retry_helper.check_retry(z_positions))
-
+    def cmd_LOCATE_GANTRY_CORNERS(self, gcmd):
+        speed = self.probe_helper.get_lift_speed()
+        offset_sets = []
+        self.locate_offsets = [0.0, 0.0, 0.0, 0.0]
+        for _ in range(10):
+            new_offsets = [random.uniform(-4.0, 4.0) for _ in range(4)]
+            offset_sets.append(new_offsets[:])
+            moves = [-orig + new for orig, new in zip(self.locate_offsets, new_offsets)]
+            self.locate_offsets = new_offsets
+            self.z_helper.adjust_steppers(moves, speed)
+            self.probe_helper.start_probe(gcmd)
+        self.locate_offsets = None
+        for offsets in offset_sets:
+            self.gcode.respond_info('=== ' + ','.join([str(lo) for lo in offsets]))
     def linefit(self,p1,p2):
         if p1[1] == p2[1]:
             # Straight line
