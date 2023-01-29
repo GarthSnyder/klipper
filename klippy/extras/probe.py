@@ -186,12 +186,16 @@ class PrinterProbe:
                 positions.append(pos)
                 # Check samples tolerance
                 z_positions = [p[2] for p in positions]
-                if max(z_positions) - min(z_positions) > samples_tolerance:
+                dropped = 0 
+                while len(positions) and (max(z_positions) - min(z_positions)) > samples_tolerance:
+                    positions = positions[1:]
+                    z_positions = z_positions[1:]
+                    dropped += 1
+                if dropped:
                     if retries >= samples_retries:
                         raise gcmd.error("Probe samples exceed samples_tolerance")
-                    gcmd.respond_info("Probe samples exceed tolerance. Retrying...")
+                    gcmd.respond_info("Probe samples exceed tolerance, dropped %d samples..." % (dropped))
                     retries += 1
-                    positions = []
             # Retract - do not reset discards as they are done once per probe
             if len(positions) < sample_count:
                 self._move(probexy + [pos[2] + sample_retract_dist], lift_speed)
