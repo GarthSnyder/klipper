@@ -159,23 +159,25 @@ class PrinterProbe:
         if must_notify_multi_probe:
             self.multi_probe_begin()
         probexy = self.printer.lookup_object('toolhead').get_position()[:2]
-        retries = 0
         positions = []
-        while len(positions) < sample_count:
+        while True:
             # Probe position
             pos = self._probe(speed)
             positions.append(pos)
-            # Check samples tolerance
-            z_positions = [p[2] for p in positions]
-            if max(z_positions) - min(z_positions) > samples_tolerance:
-                if retries >= samples_retries:
-                    raise gcmd.error("Probe samples exceed samples_tolerance")
-                gcmd.respond_info("Probe samples exceed tolerance. Retrying...")
-                retries += 1
-                positions = []
+            if len(positions) >= sample_count:
+                # Check tolerance of last N samples
+                z_positions = [p[2] for p in positions[-sample_count:]]
+                if max(z_positions) - min(z_positions) <= samples_tolerance:
+                    break
+                elif len(positions) >= sample_count + samples_retries:
+                    raise gcmd.error("Probe samples still exceed samples_tolerance after %d retries" % (sample_retries))
             # Retract
-            if len(positions) < sample_count:
-                self._move(probexy + [pos[2] + sample_retract_dist], lift_speed)
+            self._move(probexy + [pos[2] + sample_retract_dist], lift_speed)
+        # Report if samples were dropped
+        dropped = len(positions) - sample_count
+        if dropped:
+            gcmd.respond_info("Took %d extra samples to satisfy samples_tolerance goal" % (dropped))
+        positions = positions[-sample_count:]
         if must_notify_multi_probe:
             self.multi_probe_end()
         # Calculate and return result
